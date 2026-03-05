@@ -5,6 +5,7 @@ import ShoutoutWall from './components/ShoutoutWall';
 import RideBoard from './components/RideBoard';
 import MatchMap from './components/MatchMap';
 import GuestInfo from './components/GuestInfo';
+import Memories from './components/Memories';
 import Navbar from './components/Navbar';
 import Particles from './components/Particles';
 
@@ -15,6 +16,7 @@ export default function Home() {
       <Navbar />
       <main className="relative z-10">
         <Hero />
+        <Memories />
         <EventCards />
         <MatchMap />
         <ShoutoutWall />

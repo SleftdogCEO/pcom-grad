@@ -2,8 +2,14 @@
 
 import { useName } from './Providers';
 
+const ROLE_EMOJI: Record<string, string> = {
+  student: '🩺',
+  family: '❤️',
+  friend: '🤝',
+};
+
 export default function Navbar() {
-  const { name, promptName } = useName();
+  const { name, role, promptName } = useName();
 
   return (
     <nav className="fixed top-0 left-0 right-0 z-40 nav-blur">
@@ -12,7 +18,10 @@ export default function Navbar() {
           PCOM &apos;26
         </span>
         <div className="flex items-center gap-6 text-sm">
-          <a href="#events" className="text-white/50 hover:text-white transition-colors">
+          <a href="#memories" className="text-white/50 hover:text-white transition-colors">
+            Memories
+          </a>
+          <a href="#events" className="text-white/50 hover:text-white transition-colors hidden sm:block">
             Events
           </a>
           <a href="#matches" className="text-white/50 hover:text-white transition-colors hidden sm:block">
@@ -30,8 +39,9 @@ export default function Navbar() {
           {name ? (
             <button
               onClick={() => promptName()}
-              className="text-gold/70 hover:text-gold transition-colors"
+              className="text-gold/70 hover:text-gold transition-colors flex items-center gap-1"
             >
+              <span className="text-xs">{role ? ROLE_EMOJI[role] : ''}</span>
               {name}
             </button>
           ) : (
