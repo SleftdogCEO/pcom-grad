@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 
-const GRAD_DATE = new Date('2026-03-20T10:00:00-04:00');
+const GRAD_DATE = new Date('2026-04-28T10:00:00-04:00');
 
 function getTimeLeft() {
   const now = new Date();

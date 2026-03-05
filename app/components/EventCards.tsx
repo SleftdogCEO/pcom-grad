@@ -12,25 +12,25 @@ interface Rsvp {
 const EVENTS = [
   {
     id: 'march20',
-    title: 'Graduation Afterparty',
+    title: 'Match Day Celebration',
     date: 'March 20, 2026',
     time: '7:00 PM',
     venue: 'University City, Philadelphia',
     description:
-      'We just walked across that stage. Now we celebrate. Location in University City - details coming soon.',
+      'We matched. Time to celebrate. Location in University City - details coming soon.',
     emoji: '\u{1F37E}',
     gradient: 'from-maroon/20 to-transparent',
   },
   {
     id: 'april28',
-    title: 'Urban Saloon',
+    title: 'Graduation - Urban Saloon',
     date: 'April 28, 2026',
     time: '7:30 PM',
     venue: 'Urban Saloon, Philadelphia',
     address: '2120 Fairmount Ave, Philadelphia, PA 19130',
     description:
-      'One more night together before we all scatter. Classic Philly vibes.',
-    emoji: '\u{1F37B}',
+      'We did it. Doctors officially. One last night together at Urban Saloon before we all scatter.',
+    emoji: '\u{1F393}',
     gradient: 'from-gold/10 to-transparent',
   },
 ];
