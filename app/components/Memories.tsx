@@ -13,6 +13,25 @@ interface Memory {
   created_at: string;
 }
 
+interface MemoryReactionCounts {
+  [memoryId: string]: {
+    fire: number;
+    heart: number;
+    laugh: number;
+    hundred: number;
+    myReactions: string[];
+  };
+}
+
+type EmojiKey = 'fire' | 'heart' | 'laugh' | 'hundred';
+
+const REACTION_EMOJIS: { id: EmojiKey; emoji: string }[] = [
+  { id: 'fire', emoji: '\u{1F525}' },
+  { id: 'heart', emoji: '\u{2764}\u{FE0F}' },
+  { id: 'laugh', emoji: '\u{1F602}' },
+  { id: 'hundred', emoji: '\u{1F4AF}' },
+];
+
 const ROLE_BADGES: Record<string, { label: string; emoji: string; color: string }> = {
   student: { label: 'Student', emoji: '🩺', color: 'text-maroon' },
   family: { label: 'Family', emoji: '❤️', color: 'text-red-400' },
@@ -41,7 +60,10 @@ function daysUntil(date: Date): number {
 
 export default function Memories() {
   const { name, role, promptName } = useName();
+  const nameRef = useRef(name);
+  nameRef.current = name;
   const [memories, setMemories] = useState<Memory[]>([]);
+  const [reactions, setReactions] = useState<MemoryReactionCounts>({});
   const [caption, setCaption] = useState('');
   const [uploading, setUploading] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -63,8 +85,31 @@ export default function Memories() {
     if (data) setMemories(data);
   }, []);
 
+  const loadReactions = useCallback(async () => {
+    if (!supabase) return;
+    const { data } = await supabase.from('memory_reactions').select('*');
+    if (!data) return;
+    const counts: MemoryReactionCounts = {};
+    const currentName = nameRef.current;
+    for (const r of data) {
+      if (!counts[r.memory_id]) {
+        counts[r.memory_id] = { fire: 0, heart: 0, laugh: 0, hundred: 0, myReactions: [] };
+      }
+      counts[r.memory_id][r.emoji as EmojiKey]++;
+      if (currentName && r.guest_name.toLowerCase() === currentName.toLowerCase()) {
+        counts[r.memory_id].myReactions.push(r.emoji);
+      }
+    }
+    setReactions(counts);
+  }, []);
+
+  useEffect(() => {
+    loadReactions();
+  }, [name, loadReactions]);
+
   useEffect(() => {
     loadMemories();
+    loadReactions();
     if (!supabase) return;
     const channel = supabase
       .channel('memories-realtime')
@@ -72,8 +117,59 @@ export default function Memories() {
         setMemories((prev) => [payload.new as Memory, ...prev]);
       })
       .subscribe();
-    return () => { supabase!.removeChannel(channel); };
-  }, [loadMemories]);
+    const reactChannel = supabase
+      .channel('memory-reactions-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'memory_reactions' }, () => {
+        loadReactions();
+      })
+      .subscribe();
+    return () => {
+      supabase!.removeChannel(channel);
+      supabase!.removeChannel(reactChannel);
+    };
+  }, [loadMemories, loadReactions]);
+
+  const toggleReaction = async (memoryId: string, emoji: string) => {
+    let currentName = name;
+    if (!currentName) {
+      currentName = await promptName();
+      if (!currentName) return;
+    }
+    if (!supabase) return;
+
+    const existing = reactions[memoryId] || { fire: 0, heart: 0, laugh: 0, hundred: 0, myReactions: [] };
+    const isRemoving = existing.myReactions.includes(emoji);
+
+    // Optimistic update
+    setReactions((prev) => {
+      const current = prev[memoryId] || { fire: 0, heart: 0, laugh: 0, hundred: 0, myReactions: [] };
+      return {
+        ...prev,
+        [memoryId]: {
+          ...current,
+          [emoji]: current[emoji as EmojiKey] + (isRemoving ? -1 : 1),
+          myReactions: isRemoving
+            ? current.myReactions.filter((e) => e !== emoji)
+            : [...current.myReactions, emoji],
+        },
+      };
+    });
+
+    if (isRemoving) {
+      await supabase
+        .from('memory_reactions')
+        .delete()
+        .eq('memory_id', memoryId)
+        .eq('emoji', emoji)
+        .ilike('guest_name', currentName);
+    } else {
+      await supabase.from('memory_reactions').insert({
+        memory_id: memoryId,
+        guest_name: currentName,
+        emoji,
+      });
+    }
+  };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -235,29 +331,52 @@ export default function Memories() {
                   {grouped[day].map((memory) => {
                     const badge = ROLE_BADGES[memory.guest_role] || ROLE_BADGES.student;
                     return (
-                      <button
+                      <div
                         key={memory.id}
-                        onClick={() => setLightbox(memory)}
-                        className="glass-card overflow-hidden text-left group cursor-pointer"
+                        className="glass-card overflow-hidden text-left group"
                       >
-                        <div className="aspect-square overflow-hidden">
-                          <img
-                            src={memory.photo_url}
-                            alt={memory.caption || 'Memory'}
-                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                            loading="lazy"
-                          />
-                        </div>
-                        <div className="p-3">
-                          <div className="flex items-center gap-1.5 mb-1">
-                            <span className="text-xs">{badge.emoji}</span>
-                            <span className="text-xs font-medium text-white/70 truncate">{memory.guest_name}</span>
+                        <button
+                          onClick={() => setLightbox(memory)}
+                          className="w-full cursor-pointer"
+                        >
+                          <div className="aspect-square overflow-hidden">
+                            <img
+                              src={memory.photo_url}
+                              alt={memory.caption || 'Memory'}
+                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                              loading="lazy"
+                            />
                           </div>
-                          {memory.caption && (
-                            <p className="text-xs text-white/40 line-clamp-2">{memory.caption}</p>
-                          )}
+                          <div className="p-3 pb-1">
+                            <div className="flex items-center gap-1.5 mb-1">
+                              <span className="text-xs">{badge.emoji}</span>
+                              <span className="text-xs font-medium text-white/70 truncate">{memory.guest_name}</span>
+                            </div>
+                            {memory.caption && (
+                              <p className="text-xs text-white/40 line-clamp-2">{memory.caption}</p>
+                            )}
+                          </div>
+                        </button>
+                        <div className="flex gap-1 px-3 pb-3">
+                          {REACTION_EMOJIS.map((r) => {
+                            const count = reactions[memory.id]?.[r.id] || 0;
+                            const isMine = reactions[memory.id]?.myReactions?.includes(r.id);
+                            return (
+                              <button
+                                key={r.id}
+                                onClick={() => toggleReaction(memory.id, r.id)}
+                                className={`text-xs px-1.5 py-0.5 rounded-full transition-all hover:scale-110 active:scale-95 ${
+                                  isMine
+                                    ? 'bg-gold/20 border border-gold/30'
+                                    : 'bg-white/5 border border-transparent hover:bg-white/10'
+                                }`}
+                              >
+                                {r.emoji}{count > 0 && <span className="ml-0.5 text-white/40">{count}</span>}
+                              </button>
+                            );
+                          })}
                         </div>
-                      </button>
+                      </div>
                     );
                   })}
                 </div>
@@ -296,6 +415,25 @@ export default function Memories() {
               {lightbox.caption && (
                 <p className="text-white/60 text-sm">{lightbox.caption}</p>
               )}
+              <div className="flex gap-2 mt-4">
+                {REACTION_EMOJIS.map((r) => {
+                  const count = reactions[lightbox.id]?.[r.id] || 0;
+                  const isMine = reactions[lightbox.id]?.myReactions?.includes(r.id);
+                  return (
+                    <button
+                      key={r.id}
+                      onClick={() => toggleReaction(lightbox.id, r.id)}
+                      className={`text-sm px-3 py-1.5 rounded-full transition-all hover:scale-110 active:scale-95 ${
+                        isMine
+                          ? 'bg-gold/20 border border-gold/30'
+                          : 'bg-white/10 border border-transparent hover:bg-white/15'
+                      }`}
+                    >
+                      {r.emoji}{count > 0 && <span className="ml-1 text-white/50">{count}</span>}
+                    </button>
+                  );
+                })}
+              </div>
               <button
                 onClick={() => setLightbox(null)}
                 className="mt-4 w-full text-center text-white/30 hover:text-white/60 text-sm py-2"
