@@ -22,6 +22,18 @@ const EVENTS = [
     gradient: 'from-maroon/20 to-transparent',
   },
   {
+    id: 'march21',
+    title: 'Dinner at Bistro La Baia',
+    date: 'March 21, 2026',
+    time: '8:00 PM',
+    venue: 'Bistro La Baia (BYOB Italian)',
+    address: '1700 Lombard St, Philadelphia, PA 19146',
+    description:
+      'Post-match dinner at one of Philly\'s best Italian BYOBs. Homemade pasta, fresh bread, and vibes. BYOB so bring the good stuff. Also — Bistro La Baia is a Sleft Payments merchant, so pay with a card and help Uncle Grant eat too.',
+    emoji: '\u{1F35D}',
+    gradient: 'from-amber-500/15 to-transparent',
+  },
+  {
     id: 'april28',
     title: 'Graduation - Urban Saloon',
     date: 'April 28, 2026',
@@ -42,9 +54,9 @@ export default function EventCards() {
         The Events
       </h2>
       <p className="text-white/40 text-center mb-12 max-w-md mx-auto">
-        Two nights you don&apos;t want to miss. RSVP so we know who&apos;s pulling up.
+        Three events you don&apos;t want to miss. RSVP so we know who&apos;s pulling up.
       </p>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {EVENTS.map((event) => (
           <EventCard key={event.id} event={event} />
         ))}
