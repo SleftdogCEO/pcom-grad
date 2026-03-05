@@ -18,10 +18,41 @@ const VENUES = [
 ];
 
 const HOTELS = [
-  { name: 'The Logan Hotel', distance: '0.5 mi from Urban Saloon', price: '$$$$' },
-  { name: 'Sonesta Philadelphia', distance: '1 mi from Urban Saloon', price: '$$$' },
-  { name: 'Holiday Inn Express Midtown', distance: '0.8 mi from Urban Saloon', price: '$$' },
-  { name: 'Hilton Garden Inn Center City', distance: '1.2 mi from PCOM campus', price: '$$' },
+  {
+    name: 'The Logan Philadelphia',
+    address: '1 Logan Square, Philadelphia, PA 19103',
+    distance: '0.5 mi from Urban Saloon',
+    price: '$$$$',
+    url: 'https://www.hilton.com/en/hotels/phlcuqq-the-logan-philadelphia/',
+  },
+  {
+    name: 'Sonesta Philadelphia Rittenhouse Square',
+    address: '1800 Market St, Philadelphia, PA 19103',
+    distance: '1 mi from Urban Saloon',
+    price: '$$$',
+    url: 'https://www.sonesta.com/sonesta-hotels-resorts/pa/philadelphia/sonesta-philadelphia-rittenhouse-square',
+  },
+  {
+    name: 'Holiday Inn Express Philadelphia-Midtown',
+    address: '1305 Walnut St, Philadelphia, PA 19107',
+    distance: '1.5 mi from Urban Saloon',
+    price: '$$',
+    url: 'https://www.ihg.com/holidayinnexpress/hotels/us/en/philadelphia/phlwl/hoteldetail',
+  },
+  {
+    name: 'Hampton Inn Philadelphia Center City',
+    address: '1301 Race St, Philadelphia, PA 19107',
+    distance: '1 mi from Urban Saloon',
+    price: '$$',
+    url: 'https://www.hilton.com/en/hotels/phlrchx-hampton-philadelphia-center-city-convention-center/',
+  },
+  {
+    name: 'Courtyard by Marriott City Avenue',
+    address: '4100 Presidential Blvd, Philadelphia, PA 19131',
+    distance: '0.5 mi from PCOM campus',
+    price: '$$',
+    url: 'https://www.marriott.com/hotels/travel/phlav-courtyard-philadelphia-city-avenue/',
+  },
 ];
 
 const TIPS = [
@@ -83,13 +114,22 @@ export default function GuestInfo() {
       <h3 className="text-xl font-bold text-center mb-6">Nearby Hotels</h3>
       <div className="glass-card divide-y divide-white/5">
         {HOTELS.map((h) => (
-          <div key={h.name} className="flex items-center justify-between px-5 py-4">
+          <a
+            key={h.name}
+            href={h.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center justify-between px-5 py-4 hover:bg-white/[0.02] transition-colors group block"
+          >
             <div>
-              <p className="text-white/80 text-sm font-medium">{h.name}</p>
+              <p className="text-white/80 text-sm font-medium group-hover:text-gold transition-colors">
+                {h.name} <span className="text-white/20 group-hover:text-gold/50">&rarr;</span>
+              </p>
               <p className="text-white/30 text-xs mt-0.5">{h.distance}</p>
+              <p className="text-white/20 text-xs mt-0.5">{h.address}</p>
             </div>
-            <span className="text-gold/50 text-sm">{h.price}</span>
-          </div>
+            <span className="text-gold/50 text-sm shrink-0 ml-4">{h.price}</span>
+          </a>
         ))}
       </div>
     </section>

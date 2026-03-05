@@ -42,18 +42,29 @@ const SPECIALTY_COLORS: Record<string, string> = {
   'Urology': 'bg-emerald-500/20 text-emerald-300',
 };
 
+const UNLOCK_DATE = new Date('2026-03-20T00:00:00-04:00');
+
 export default function MatchMap() {
   const { name, promptName } = useName();
   const [matches, setMatches] = useState<Match[]>([]);
   const [formOpen, setFormOpen] = useState(false);
   const [posting, setPosting] = useState(false);
   const [hasPosted, setHasPosted] = useState(false);
+  const [now, setNow] = useState(() => new Date());
   const [form, setForm] = useState({
     specialty: '',
     city: '',
     state: '',
     program: '',
   });
+
+  const isLocked = now < UNLOCK_DATE;
+
+  useEffect(() => {
+    if (!isLocked) return;
+    const id = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(id);
+  }, [isLocked]);
 
   useEffect(() => {
     if (!supabase) return;
@@ -137,6 +148,11 @@ export default function MatchMap() {
       <p className="text-white/40 text-center mb-4 max-w-md mx-auto">
         We&apos;re spreading out. Drop your match so everyone can see where the class is headed.
       </p>
+
+      {isLocked ? (
+        <LockedState unlockDate={UNLOCK_DATE} now={now} />
+      ) : (
+      <>
 
       {matches.length > 0 && (
         <div className="flex justify-center gap-6 mb-10 text-center">
@@ -296,6 +312,48 @@ export default function MatchMap() {
           </p>
         </div>
       )}
+
+      </>
+      )}
     </section>
+  );
+}
+
+function LockedState({ unlockDate, now }: { unlockDate: Date; now: Date }) {
+  const diff = unlockDate.getTime() - now.getTime();
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  const hours = Math.floor((diff / (1000 * 60 * 60)) % 24);
+  const minutes = Math.floor((diff / (1000 * 60)) % 60);
+  const seconds = Math.floor((diff / 1000) % 60);
+
+  return (
+    <div className="glass-card p-10 md:p-14 text-center max-w-lg mx-auto">
+      <div className="text-6xl mb-5">{'\u{1F512}'}</div>
+      <h3 className="text-2xl font-bold mb-2">Locked Until Match Day</h3>
+      <p className="text-white/40 text-sm mb-8">
+        This section unlocks on March 20, 2026 when matches are revealed.
+      </p>
+      <div className="flex items-center justify-center gap-3">
+        <div className="flex flex-col items-center">
+          <span className="text-2xl md:text-3xl font-mono font-bold tabular-nums text-gold">{String(days).padStart(2, '0')}</span>
+          <span className="text-white/30 text-xs mt-1 uppercase tracking-wider">Days</span>
+        </div>
+        <span className="text-white/20 text-xl -mt-5">:</span>
+        <div className="flex flex-col items-center">
+          <span className="text-2xl md:text-3xl font-mono font-bold tabular-nums text-gold">{String(hours).padStart(2, '0')}</span>
+          <span className="text-white/30 text-xs mt-1 uppercase tracking-wider">Hrs</span>
+        </div>
+        <span className="text-white/20 text-xl -mt-5">:</span>
+        <div className="flex flex-col items-center">
+          <span className="text-2xl md:text-3xl font-mono font-bold tabular-nums text-gold">{String(minutes).padStart(2, '0')}</span>
+          <span className="text-white/30 text-xs mt-1 uppercase tracking-wider">Min</span>
+        </div>
+        <span className="text-white/20 text-xl -mt-5">:</span>
+        <div className="flex flex-col items-center">
+          <span className="text-2xl md:text-3xl font-mono font-bold tabular-nums text-gold">{String(seconds).padStart(2, '0')}</span>
+          <span className="text-white/30 text-xs mt-1 uppercase tracking-wider">Sec</span>
+        </div>
+      </div>
+    </div>
   );
 }
