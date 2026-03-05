@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useName } from './Providers';
 
@@ -12,7 +12,7 @@ interface Shoutout {
   created_at: string;
 }
 
-interface ReactionCount {
+interface ReactionCounts {
   [shoutoutId: string]: {
     fire: number;
     heart: number;
@@ -22,7 +22,9 @@ interface ReactionCount {
   };
 }
 
-const REACTION_EMOJIS: { id: string; emoji: string }[] = [
+type EmojiKey = 'fire' | 'heart' | 'laugh' | 'hundred';
+
+const REACTION_EMOJIS: { id: EmojiKey; emoji: string }[] = [
   { id: 'fire', emoji: '\u{1F525}' },
   { id: 'heart', emoji: '\u{2764}\u{FE0F}' },
   { id: 'laugh', emoji: '\u{1F602}' },
@@ -46,27 +48,34 @@ const CATEGORY_STYLES: Record<string, string> = {
 export default function ShoutoutWall() {
   const { name, promptName } = useName();
   const [shoutouts, setShoutouts] = useState<Shoutout[]>([]);
-  const [reactions, setReactions] = useState<ReactionCount>({});
+  const [reactions, setReactions] = useState<ReactionCounts>({});
   const [message, setMessage] = useState('');
   const [category, setCategory] = useState('hype');
   const [posting, setPosting] = useState(false);
+  const nameRef = useRef(name);
+  nameRef.current = name;
 
-  const loadReactions = async () => {
+  const loadReactions = useCallback(async () => {
     if (!supabase) return;
     const { data } = await supabase.from('reactions').select('*');
     if (!data) return;
-    const counts: ReactionCount = {};
+    const counts: ReactionCounts = {};
+    const currentName = nameRef.current;
     for (const r of data) {
       if (!counts[r.shoutout_id]) {
         counts[r.shoutout_id] = { fire: 0, heart: 0, laugh: 0, hundred: 0, myReactions: [] };
       }
-      counts[r.shoutout_id][r.emoji as keyof Omit<ReactionCount[string], 'myReactions'>]++;
-      if (name && r.guest_name.toLowerCase() === name.toLowerCase()) {
+      counts[r.shoutout_id][r.emoji as EmojiKey]++;
+      if (currentName && r.guest_name.toLowerCase() === currentName.toLowerCase()) {
         counts[r.shoutout_id].myReactions.push(r.emoji);
       }
     }
     setReactions(counts);
-  };
+  }, []);
+
+  useEffect(() => {
+    loadReactions();
+  }, [name, loadReactions]);
 
   useEffect(() => {
     if (!supabase) return;
@@ -108,8 +117,7 @@ export default function ShoutoutWall() {
       supabase!.removeChannel(channel);
       supabase!.removeChannel(reactChannel);
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [name]);
+  }, [loadReactions]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -138,8 +146,25 @@ export default function ShoutoutWall() {
     }
     if (!supabase) return;
 
-    const myReactions = reactions[shoutoutId]?.myReactions || [];
-    if (myReactions.includes(emoji)) {
+    const existing = reactions[shoutoutId] || { fire: 0, heart: 0, laugh: 0, hundred: 0, myReactions: [] };
+    const isRemoving = existing.myReactions.includes(emoji);
+
+    // Optimistic update
+    setReactions((prev) => {
+      const current = prev[shoutoutId] || { fire: 0, heart: 0, laugh: 0, hundred: 0, myReactions: [] };
+      return {
+        ...prev,
+        [shoutoutId]: {
+          ...current,
+          [emoji]: current[emoji as EmojiKey] + (isRemoving ? -1 : 1),
+          myReactions: isRemoving
+            ? current.myReactions.filter((e) => e !== emoji)
+            : [...current.myReactions, emoji],
+        },
+      };
+    });
+
+    if (isRemoving) {
       await supabase
         .from('reactions')
         .delete()
@@ -245,7 +270,7 @@ export default function ShoutoutWall() {
               <p className="text-white/30 text-sm">&mdash; {s.guest_name}</p>
               <div className="flex gap-1">
                 {REACTION_EMOJIS.map((r) => {
-                  const count = reactions[s.id]?.[r.id as keyof Omit<ReactionCount[string], 'myReactions'>] || 0;
+                  const count = reactions[s.id]?.[r.id] || 0;
                   const isMine = reactions[s.id]?.myReactions?.includes(r.id);
                   return (
                     <button
