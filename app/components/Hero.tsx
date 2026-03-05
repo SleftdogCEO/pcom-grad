@@ -2,11 +2,12 @@
 
 import { useEffect, useState } from 'react';
 
+const MATCH_DATE = new Date('2026-03-20T12:00:00-04:00');
 const GRAD_DATE = new Date('2026-04-28T10:00:00-04:00');
 
-function getTimeLeft() {
+function getTimeUntil(target: Date) {
   const now = new Date();
-  const diff = GRAD_DATE.getTime() - now.getTime();
+  const diff = target.getTime() - now.getTime();
   if (diff <= 0) return { days: 0, hours: 0, minutes: 0, seconds: 0, passed: true };
   return {
     days: Math.floor(diff / (1000 * 60 * 60 * 24)),
@@ -18,10 +19,14 @@ function getTimeLeft() {
 }
 
 export default function Hero() {
-  const [time, setTime] = useState(getTimeLeft);
+  const [match, setMatch] = useState(() => getTimeUntil(MATCH_DATE));
+  const [grad, setGrad] = useState(() => getTimeUntil(GRAD_DATE));
 
   useEffect(() => {
-    const id = setInterval(() => setTime(getTimeLeft()), 1000);
+    const id = setInterval(() => {
+      setMatch(getTimeUntil(MATCH_DATE));
+      setGrad(getTimeUntil(GRAD_DATE));
+    }, 1000);
     return () => clearInterval(id);
   }, []);
 
@@ -36,26 +41,51 @@ export default function Hero() {
           We made it. Time to celebrate.
         </p>
 
-        {!time.passed ? (
-          <div className="mt-12">
-            <p className="text-white/30 text-sm uppercase tracking-widest mb-4">
-              Countdown to Graduation
-            </p>
-            <div className="flex items-center justify-center gap-3 md:gap-5">
-              <CountdownUnit value={time.days} label="Days" />
-              <span className="text-white/20 text-2xl font-light -mt-6">:</span>
-              <CountdownUnit value={time.hours} label="Hrs" />
-              <span className="text-white/20 text-2xl font-light -mt-6">:</span>
-              <CountdownUnit value={time.minutes} label="Min" />
-              <span className="text-white/20 text-2xl font-light -mt-6">:</span>
-              <CountdownUnit value={time.seconds} label="Sec" />
+        <div className="mt-12 flex flex-col md:flex-row items-center justify-center gap-8 md:gap-12">
+          {!match.passed ? (
+            <div>
+              <p className="text-white/30 text-sm uppercase tracking-widest mb-4">
+                Countdown to Match Day
+              </p>
+              <div className="flex items-center justify-center gap-3 md:gap-5">
+                <CountdownUnit value={match.days} label="Days" />
+                <span className="text-white/20 text-2xl font-light -mt-6">:</span>
+                <CountdownUnit value={match.hours} label="Hrs" />
+                <span className="text-white/20 text-2xl font-light -mt-6">:</span>
+                <CountdownUnit value={match.minutes} label="Min" />
+                <span className="text-white/20 text-2xl font-light -mt-6">:</span>
+                <CountdownUnit value={match.seconds} label="Sec" />
+              </div>
             </div>
-          </div>
-        ) : (
-          <p className="mt-12 text-3xl font-bold text-gold">
-            Congratulations, Doctors!
-          </p>
-        )}
+          ) : (
+            <p className="text-2xl font-bold text-gold">
+              We Matched!
+            </p>
+          )}
+
+          {!match.passed && <div className="hidden md:block w-px h-20 bg-white/10" />}
+
+          {!grad.passed ? (
+            <div>
+              <p className="text-white/30 text-sm uppercase tracking-widest mb-4">
+                Countdown to Graduation
+              </p>
+              <div className="flex items-center justify-center gap-3 md:gap-5">
+                <CountdownUnit value={grad.days} label="Days" />
+                <span className="text-white/20 text-2xl font-light -mt-6">:</span>
+                <CountdownUnit value={grad.hours} label="Hrs" />
+                <span className="text-white/20 text-2xl font-light -mt-6">:</span>
+                <CountdownUnit value={grad.minutes} label="Min" />
+                <span className="text-white/20 text-2xl font-light -mt-6">:</span>
+                <CountdownUnit value={grad.seconds} label="Sec" />
+              </div>
+            </div>
+          ) : (
+            <p className="text-2xl font-bold text-gold">
+              Congratulations, Doctors!
+            </p>
+          )}
+        </div>
 
         <div className="mt-16">
           <a
