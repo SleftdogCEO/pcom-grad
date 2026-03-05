@@ -15,11 +15,17 @@ export default function Navbar() {
           <a href="#events" className="text-white/50 hover:text-white transition-colors">
             Events
           </a>
+          <a href="#matches" className="text-white/50 hover:text-white transition-colors hidden sm:block">
+            Matches
+          </a>
           <a href="#wall" className="text-white/50 hover:text-white transition-colors">
             Wall
           </a>
-          <a href="#rides" className="text-white/50 hover:text-white transition-colors">
+          <a href="#rides" className="text-white/50 hover:text-white transition-colors hidden sm:block">
             Rides
+          </a>
+          <a href="#info" className="text-white/50 hover:text-white transition-colors hidden sm:block">
+            Info
           </a>
           {name ? (
             <button

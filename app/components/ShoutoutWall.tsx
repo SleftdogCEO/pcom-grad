@@ -12,6 +12,23 @@ interface Shoutout {
   created_at: string;
 }
 
+interface ReactionCount {
+  [shoutoutId: string]: {
+    fire: number;
+    heart: number;
+    laugh: number;
+    hundred: number;
+    myReactions: string[];
+  };
+}
+
+const REACTION_EMOJIS: { id: string; emoji: string }[] = [
+  { id: 'fire', emoji: '\u{1F525}' },
+  { id: 'heart', emoji: '\u{2764}\u{FE0F}' },
+  { id: 'laugh', emoji: '\u{1F602}' },
+  { id: 'hundred', emoji: '\u{1F4AF}' },
+];
+
 const CATEGORIES = [
   { id: 'hype', emoji: '\u{1F389}', label: 'Hype' },
   { id: 'superlative', emoji: '\u{1F3C6}', label: 'Superlative' },
@@ -29,9 +46,27 @@ const CATEGORY_STYLES: Record<string, string> = {
 export default function ShoutoutWall() {
   const { name, promptName } = useName();
   const [shoutouts, setShoutouts] = useState<Shoutout[]>([]);
+  const [reactions, setReactions] = useState<ReactionCount>({});
   const [message, setMessage] = useState('');
   const [category, setCategory] = useState('hype');
   const [posting, setPosting] = useState(false);
+
+  const loadReactions = async () => {
+    if (!supabase) return;
+    const { data } = await supabase.from('reactions').select('*');
+    if (!data) return;
+    const counts: ReactionCount = {};
+    for (const r of data) {
+      if (!counts[r.shoutout_id]) {
+        counts[r.shoutout_id] = { fire: 0, heart: 0, laugh: 0, hundred: 0, myReactions: [] };
+      }
+      counts[r.shoutout_id][r.emoji as keyof Omit<ReactionCount[string], 'myReactions'>]++;
+      if (name && r.guest_name.toLowerCase() === name.toLowerCase()) {
+        counts[r.shoutout_id].myReactions.push(r.emoji);
+      }
+    }
+    setReactions(counts);
+  };
 
   useEffect(() => {
     if (!supabase) return;
@@ -45,6 +80,8 @@ export default function ShoutoutWall() {
         if (data) setShoutouts(data);
       });
 
+    loadReactions();
+
     const channel = supabase
       .channel('shoutouts')
       .on(
@@ -56,10 +93,23 @@ export default function ShoutoutWall() {
       )
       .subscribe();
 
+    const reactChannel = supabase
+      .channel('reactions')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'reactions' },
+        () => {
+          loadReactions();
+        }
+      )
+      .subscribe();
+
     return () => {
       supabase!.removeChannel(channel);
+      supabase!.removeChannel(reactChannel);
     };
-  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [name]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -78,6 +128,31 @@ export default function ShoutoutWall() {
     });
     setMessage('');
     setPosting(false);
+  };
+
+  const toggleReaction = async (shoutoutId: string, emoji: string) => {
+    let currentName = name;
+    if (!currentName) {
+      currentName = await promptName();
+      if (!currentName) return;
+    }
+    if (!supabase) return;
+
+    const myReactions = reactions[shoutoutId]?.myReactions || [];
+    if (myReactions.includes(emoji)) {
+      await supabase
+        .from('reactions')
+        .delete()
+        .eq('shoutout_id', shoutoutId)
+        .eq('emoji', emoji)
+        .ilike('guest_name', currentName);
+    } else {
+      await supabase.from('reactions').insert({
+        shoutout_id: shoutoutId,
+        guest_name: currentName,
+        emoji,
+      });
+    }
   };
 
   return (
@@ -166,7 +241,28 @@ export default function ShoutoutWall() {
               </span>
             </div>
             <p className="text-white/85 leading-relaxed">{s.message}</p>
-            <p className="text-white/30 text-sm mt-3">&mdash; {s.guest_name}</p>
+            <div className="flex items-center justify-between mt-3">
+              <p className="text-white/30 text-sm">&mdash; {s.guest_name}</p>
+              <div className="flex gap-1">
+                {REACTION_EMOJIS.map((r) => {
+                  const count = reactions[s.id]?.[r.id as keyof Omit<ReactionCount[string], 'myReactions'>] || 0;
+                  const isMine = reactions[s.id]?.myReactions?.includes(r.id);
+                  return (
+                    <button
+                      key={r.id}
+                      onClick={() => toggleReaction(s.id, r.id)}
+                      className={`text-xs px-1.5 py-0.5 rounded-full transition-all hover:scale-110 active:scale-95 ${
+                        isMine
+                          ? 'bg-gold/20 border border-gold/30'
+                          : 'bg-white/5 border border-transparent hover:bg-white/10'
+                      }`}
+                    >
+                      {r.emoji}{count > 0 && <span className="ml-0.5 text-white/40">{count}</span>}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
           </div>
         ))}
       </div>

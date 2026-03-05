@@ -71,9 +71,49 @@ body {
   to { opacity: 1; transform: translateY(0); }
 }
 
+/* Section dividers */
+section {
+  position: relative;
+}
+
+section + section::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 60px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(201, 169, 78, 0.3), transparent);
+}
+
+/* Hover glow on glass cards */
+.glass-card {
+  transition: border-color 0.3s, box-shadow 0.3s, transform 0.2s;
+}
+
+.glass-card:hover {
+  box-shadow: 0 0 30px rgba(139, 26, 43, 0.06);
+}
+
 /* Nav blur */
 .nav-blur {
   background: rgba(11, 11, 15, 0.8);
   backdrop-filter: blur(12px);
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+/* Pulse dot for live features */
+@keyframes livePulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(1.5); }
+}
+
+.live-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #4ade80;
+  animation: livePulse 2s ease-in-out infinite;
+  display: inline-block;
 }
