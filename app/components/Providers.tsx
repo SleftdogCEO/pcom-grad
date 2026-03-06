@@ -47,7 +47,7 @@ export function Providers({ children }: { children: ReactNode }) {
   >(null);
 
   useEffect(() => {
-    if (localStorage.getItem('siteAuthed') === 'true') {
+    if (localStorage.getItem('siteAuthed') === 'DO2026PCOM!') {
       setAuthed(true);
     }
   }, []);
@@ -65,7 +65,7 @@ export function Providers({ children }: { children: ReactNode }) {
   }, [authed]);
 
   if (!authed) {
-    return <PasswordGate onSuccess={() => { localStorage.setItem('siteAuthed', 'true'); setAuthed(true); }} />;
+    return <PasswordGate onSuccess={() => { localStorage.setItem('siteAuthed', 'DO2026PCOM!'); setAuthed(true); }} />;
   }
 
   const setName = useCallback((n: string) => {
