@@ -35,7 +35,7 @@ const ROLE_OPTIONS: { value: Role; label: string; emoji: string }[] = [
   { value: 'friend', label: 'Friend', emoji: '🤝' },
 ];
 
-const SITE_PASSWORD = 'PCOM2026';
+const SITE_PASSWORD = 'DO2026PCOM!';
 
 export function Providers({ children }: { children: ReactNode }) {
   const [authed, setAuthed] = useState(false);
