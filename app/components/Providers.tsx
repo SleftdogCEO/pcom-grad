@@ -35,7 +35,10 @@ const ROLE_OPTIONS: { value: Role; label: string; emoji: string }[] = [
   { value: 'friend', label: 'Friend', emoji: '🤝' },
 ];
 
+const SITE_PASSWORD = 'PCOM2026';
+
 export function Providers({ children }: { children: ReactNode }) {
+  const [authed, setAuthed] = useState(false);
   const [name, setNameState] = useState<string | null>(null);
   const [role, setRoleState] = useState<Role | null>(null);
   const [showModal, setShowModal] = useState(false);
@@ -44,6 +47,13 @@ export function Providers({ children }: { children: ReactNode }) {
   >(null);
 
   useEffect(() => {
+    if (localStorage.getItem('siteAuthed') === 'true') {
+      setAuthed(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!authed) return;
     const storedName = localStorage.getItem('guestName');
     const storedRole = localStorage.getItem('guestRole') as Role | null;
     if (storedName) {
@@ -52,7 +62,11 @@ export function Providers({ children }: { children: ReactNode }) {
     } else {
       setShowModal(true);
     }
-  }, []);
+  }, [authed]);
+
+  if (!authed) {
+    return <PasswordGate onSuccess={() => { localStorage.setItem('siteAuthed', 'true'); setAuthed(true); }} />;
+  }
 
   const setName = useCallback((n: string) => {
     const trimmed = n.trim();
@@ -103,6 +117,55 @@ export function Providers({ children }: { children: ReactNode }) {
         />
       )}
     </NameContext.Provider>
+  );
+}
+
+function PasswordGate({ onSuccess }: { onSuccess: () => void }) {
+  const [pw, setPw] = useState('');
+  const [error, setError] = useState(false);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (pw.trim().toUpperCase() === SITE_PASSWORD) {
+      onSuccess();
+    } else {
+      setError(true);
+      setPw('');
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0a0a0f] px-4">
+      <div className="glass-card p-8 max-w-sm w-full text-center">
+        <div className="text-5xl mb-4">&#128274;</div>
+        <h2 className="text-2xl font-bold mb-2">Private Site</h2>
+        <p className="text-white/50 mb-6 text-sm">
+          Enter the password to access the PCOM Class of 2026 page.
+        </p>
+        <form onSubmit={handleSubmit}>
+          <input
+            type="password"
+            value={pw}
+            onChange={(e) => { setPw(e.target.value); setError(false); }}
+            placeholder="Password"
+            autoFocus
+            className={`w-full bg-white/5 border rounded-xl px-4 py-3 text-white text-center text-lg placeholder:text-white/30 focus:outline-none transition-colors ${
+              error ? 'border-red-500/50 focus:border-red-500/50' : 'border-white/10 focus:border-gold/50'
+            }`}
+          />
+          {error && (
+            <p className="text-red-400 text-xs mt-2">Wrong password. Try again.</p>
+          )}
+          <button
+            type="submit"
+            disabled={!pw.trim()}
+            className="w-full mt-4 bg-maroon hover:bg-maroon/80 disabled:opacity-30 text-white font-semibold py-3 rounded-xl transition-all"
+          >
+            Enter
+          </button>
+        </form>
+      </div>
+    </div>
   );
 }
 
