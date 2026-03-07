@@ -8,6 +8,7 @@ import {
   fold, check, call, raise, allIn,
   SUIT_DISPLAY, RANK_DISPLAY,
 } from '../lib/engine';
+import { getAvatar, findProfile, KNOWN_PLAYERS } from '../lib/avatars';
 
 const ROOM_ID = 'pcom-main';
 const DEFAULT_BUY_IN = 1000;
@@ -25,6 +26,13 @@ export default function PokerGame() {
   const [raiseInput, setRaiseInput] = useState('');
   const [showRaise, setShowRaise] = useState(false);
   const [joined, setJoined] = useState(false);
+  const [useNickname, setUseNickname] = useState(() => {
+    if (typeof window !== 'undefined') return localStorage.getItem('pokerUseNickname') === 'true';
+    return false;
+  });
+  const [showSettings, setShowSettings] = useState(false);
+  const [editName, setEditName] = useState('');
+  const [editNickname, setEditNickname] = useState('');
   const stateRef = useRef<GameState | null>(null);
 
   // Load name from main site
@@ -303,10 +311,20 @@ export default function PokerGame() {
                   </div>
 
                   {/* Avatar */}
-                  <div className={`pk-avatar ${isMe ? 'pk-avatar-me' : ''}`}>
-                    {player.name.slice(0, 2).toUpperCase()}
+                  {getAvatar(player.name) ? (
+                    <div className={`pk-avatar pk-avatar-img ${isMe ? 'pk-avatar-me-ring' : ''}`}>
+                      <img src={getAvatar(player.name)!} alt={player.name} />
+                    </div>
+                  ) : (
+                    <div className={`pk-avatar ${isMe ? 'pk-avatar-me' : ''}`}>
+                      {player.name.slice(0, 2).toUpperCase()}
+                    </div>
+                  )}
+                  <div className="pk-seat-name">
+                    {findProfile(player.name)
+                      ? (useNickname ? findProfile(player.name)!.nickname : findProfile(player.name)!.name)
+                      : player.name}
                   </div>
-                  <div className="pk-seat-name">{player.name}</div>
                   <div className="pk-seat-chips">${player.chips.toLocaleString()}</div>
 
                   {/* Bet */}
@@ -350,8 +368,62 @@ export default function PokerGame() {
         </div>
       </div>
 
+      {/* Settings modal */}
+      {showSettings && (
+        <div className="pk-modal-overlay" onClick={() => setShowSettings(false)}>
+          <div className="pk-modal" onClick={(e) => e.stopPropagation()}>
+            <h3>Settings</h3>
+            <div className="pk-setting-row">
+              <label>Show nicknames</label>
+              <button
+                onClick={() => {
+                  const next = !useNickname;
+                  setUseNickname(next);
+                  localStorage.setItem('pokerUseNickname', String(next));
+                }}
+                className={`pk-toggle ${useNickname ? 'pk-toggle-on' : ''}`}
+              >
+                {useNickname ? 'ON' : 'OFF'}
+              </button>
+            </div>
+            <div className="pk-setting-row">
+              <label>Change name</label>
+              <input
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                placeholder={myName || 'Your name'}
+                className="pk-input pk-input-sm"
+              />
+              <button
+                onClick={() => {
+                  if (editName.trim()) {
+                    localStorage.setItem('guestName', editName.trim());
+                    setMyName(editName.trim());
+                    setEditName('');
+                  }
+                }}
+                className="pk-btn pk-btn-sm"
+                disabled={!editName.trim()}
+              >
+                Save
+              </button>
+            </div>
+            <button onClick={() => setShowSettings(false)} className="pk-btn pk-btn-secondary pk-btn-full">
+              Done
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Controls */}
       <div className="pk-controls">
+        {/* Settings gear */}
+        <button onClick={() => setShowSettings(true)} className="pk-settings-btn" title="Settings">
+          <svg width="18" height="18" viewBox="0 0 20 20" fill="currentColor">
+            <path fillRule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clipRule="evenodd"/>
+          </svg>
+        </button>
+
         {/* My info */}
         {me && (
           <div className="pk-my-info">
@@ -778,6 +850,66 @@ const styles = `
     50% { opacity: 0.7; }
   }
   .pk-folded-msg { color: rgba(239,68,68,0.4); }
+
+  /* ─── Avatar images ─── */
+  .pk-avatar-img {
+    overflow: hidden; padding: 0; background: none; border: 2px solid rgba(255,255,255,0.3);
+  }
+  .pk-avatar-img img {
+    width: 100%; height: 100%; object-fit: cover; border-radius: 50%;
+  }
+  .pk-avatar-me-ring {
+    border-color: #C9A94E !important;
+    box-shadow: 0 0 0 2px rgba(201,169,78,0.4), 0 2px 8px rgba(0,0,0,0.3);
+  }
+
+  /* ─── Settings ─── */
+  .pk-settings-btn {
+    position: fixed; top: 12px; right: 12px; z-index: 50;
+    background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.1);
+    color: rgba(255,255,255,0.4); width: 36px; height: 36px;
+    border-radius: 50%; display: flex; align-items: center; justify-content: center;
+    cursor: pointer; transition: all 0.2s;
+  }
+  .pk-settings-btn:hover { color: white; background: rgba(255,255,255,0.12); }
+
+  .pk-modal-overlay {
+    position: fixed; inset: 0; z-index: 100;
+    background: rgba(0,0,0,0.7); backdrop-filter: blur(4px);
+    display: flex; align-items: center; justify-content: center; padding: 20px;
+  }
+  .pk-modal {
+    background: #1a1a2e; border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 16px; padding: 24px; max-width: 360px; width: 100%;
+    display: flex; flex-direction: column; gap: 16px;
+  }
+  .pk-modal h3 { font-size: 18px; font-weight: 700; margin: 0; }
+
+  .pk-setting-row {
+    display: flex; align-items: center; gap: 8px;
+  }
+  .pk-setting-row label {
+    font-size: 13px; color: rgba(255,255,255,0.6); flex-shrink: 0;
+  }
+
+  .pk-toggle {
+    padding: 6px 14px; border-radius: 8px; font-size: 12px; font-weight: 700;
+    background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.1);
+    color: rgba(255,255,255,0.4); cursor: pointer; transition: all 0.15s;
+    margin-left: auto;
+  }
+  .pk-toggle-on {
+    background: rgba(201,169,78,0.15); border-color: rgba(201,169,78,0.4);
+    color: #C9A94E;
+  }
+
+  .pk-input-sm { padding: 8px 12px !important; font-size: 13px !important; flex: 1; min-width: 0; }
+  .pk-btn-sm { padding: 8px 12px !important; font-size: 12px !important; border-radius: 8px !important; }
+  .pk-btn-secondary {
+    background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.6);
+    border: 1px solid rgba(255,255,255,0.1);
+  }
+  .pk-btn-full { width: 100%; text-align: center; }
 
   /* ─── Mobile ─── */
   @media (max-width: 640px) {
