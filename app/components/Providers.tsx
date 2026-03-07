@@ -52,22 +52,6 @@ export function Providers({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  useEffect(() => {
-    if (!authed) return;
-    const storedName = localStorage.getItem('guestName');
-    const storedRole = localStorage.getItem('guestRole') as Role | null;
-    if (storedName) {
-      setNameState(storedName);
-      setRoleState(storedRole || 'student');
-    } else {
-      setShowModal(true);
-    }
-  }, [authed]);
-
-  if (!authed) {
-    return <PasswordGate onSuccess={() => { localStorage.setItem('siteAuthed', 'DO2026PCOM!'); setAuthed(true); }} />;
-  }
-
   const setName = useCallback((n: string) => {
     const trimmed = n.trim();
     if (!trimmed) return;
@@ -88,6 +72,18 @@ export function Providers({ children }: { children: ReactNode }) {
     });
   }, [name]);
 
+  useEffect(() => {
+    if (!authed) return;
+    const storedName = localStorage.getItem('guestName');
+    const storedRole = localStorage.getItem('guestRole') as Role | null;
+    if (storedName) {
+      setNameState(storedName);
+      setRoleState(storedRole || 'student');
+    } else {
+      setShowModal(true);
+    }
+  }, [authed]);
+
   const handleSubmit = (value: string, selectedRole: Role) => {
     setName(value);
     setRole(selectedRole);
@@ -105,6 +101,10 @@ export function Providers({ children }: { children: ReactNode }) {
       setResolvePrompt(null);
     }
   };
+
+  if (!authed) {
+    return <PasswordGate onSuccess={() => { localStorage.setItem('siteAuthed', 'DO2026PCOM!'); setAuthed(true); }} />;
+  }
 
   return (
     <NameContext.Provider value={{ name, role, setName, setRole, promptName }}>
