@@ -36,6 +36,9 @@ export default function Navbar() {
           <a href="#info" className="text-white/50 hover:text-white transition-colors hidden sm:block">
             Info
           </a>
+          <a href="/blackjack" className="text-gold/80 hover:text-gold transition-colors font-semibold">
+            Blackjack
+          </a>
           {name ? (
             <button
               onClick={() => promptName()}

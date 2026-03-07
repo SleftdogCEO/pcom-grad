@@ -9,7 +9,32 @@ interface Rsvp {
   guest_name: string;
 }
 
-const EVENTS = [
+interface Event {
+  id: string;
+  title: string;
+  date: string;
+  time: string;
+  venue: string;
+  description: string;
+  emoji: string;
+  gradient: string;
+  address?: string;
+  link?: string;
+}
+
+const EVENTS: Event[] = [
+  {
+    id: 'fridaynight',
+    title: 'Friday Night Blackjack',
+    date: 'Tonight',
+    time: 'Right Now',
+    venue: 'pcom-grad.vercel.app/blackjack',
+    description:
+      'Grab a drink, open the table, and see who can stack the most PCOM Bucks. No real money, just bragging rights. Hit or stand, Doctor?',
+    emoji: '\u{1F0CF}',
+    gradient: 'from-green-600/20 to-transparent',
+    link: '/blackjack',
+  },
   {
     id: 'march20',
     title: 'Match Day Celebration',
@@ -68,7 +93,7 @@ export default function EventCards() {
 function EventCard({
   event,
 }: {
-  event: (typeof EVENTS)[number];
+  event: Event;
 }) {
   const { name, promptName } = useName();
   const [rsvps, setRsvps] = useState<Rsvp[]>([]);
@@ -181,17 +206,26 @@ function EventCard({
         {event.description}
       </p>
 
-      <button
-        onClick={handleRsvp}
-        disabled={hasRsvpd || loading}
-        className={`mt-6 w-full py-3 rounded-xl font-semibold text-sm transition-all ${
-          hasRsvpd
-            ? 'bg-green-500/20 text-green-400 border border-green-500/30 cursor-default'
-            : 'bg-maroon hover:bg-maroon/80 text-white active:scale-[0.98]'
-        } disabled:opacity-60`}
-      >
-        {hasRsvpd ? "YOU'RE IN \u2713" : loading ? 'Saving...' : "I'M IN \u{1F389}"}
-      </button>
+      {event.link ? (
+        <a
+          href={event.link}
+          className="mt-6 w-full py-3 rounded-xl font-semibold text-sm transition-all bg-green-600 hover:bg-green-500 text-white active:scale-[0.98] text-center block"
+        >
+          PLAY NOW
+        </a>
+      ) : (
+        <button
+          onClick={handleRsvp}
+          disabled={hasRsvpd || loading}
+          className={`mt-6 w-full py-3 rounded-xl font-semibold text-sm transition-all ${
+            hasRsvpd
+              ? 'bg-green-500/20 text-green-400 border border-green-500/30 cursor-default'
+              : 'bg-maroon hover:bg-maroon/80 text-white active:scale-[0.98]'
+          } disabled:opacity-60`}
+        >
+          {hasRsvpd ? "YOU'RE IN \u2713" : loading ? 'Saving...' : "I'M IN \u{1F389}"}
+        </button>
+      )}
 
       <div className="mt-5">
         <p className="text-white/30 text-xs font-medium uppercase tracking-wider">
