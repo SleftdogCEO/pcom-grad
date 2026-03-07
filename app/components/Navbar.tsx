@@ -36,7 +36,10 @@ export default function Navbar() {
           <a href="#info" className="text-white/50 hover:text-white transition-colors hidden sm:block">
             Info
           </a>
-          <a href="/blackjack" className="text-gold/80 hover:text-gold transition-colors font-semibold">
+          <a href="/poker" className="text-gold/80 hover:text-gold transition-colors font-semibold">
+            Poker
+          </a>
+          <a href="/blackjack" className="text-gold/80 hover:text-gold transition-colors font-semibold hidden sm:block">
             Blackjack
           </a>
           {name ? (
