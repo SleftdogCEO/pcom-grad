@@ -134,6 +134,24 @@ export default function BlackjackGame() {
   const [showChipAnimation, setShowChipAnimation] = useState(false);
   const dealTimeouts = useRef<NodeJS.Timeout[]>([]);
 
+  // Split state
+  const [splitHand, setSplitHand] = useState<Card[]>([]);
+  const [splitBet, setSplitBet] = useState(0);
+  const [splitResult, setSplitResult] = useState<Result>(null);
+  const [splitResultMessage, setSplitResultMessage] = useState('');
+  const [activeSplit, setActiveSplit] = useState(false);
+  const [isSplit, setIsSplit] = useState(false);
+
+  // Refs for async/timeout access (avoids stale closures)
+  const playerHandRef = useRef<Card[]>([]);
+  const splitHandRef = useRef<Card[]>([]);
+  const dealerHandRef = useRef<Card[]>([]);
+  const deckRef = useRef<Card[]>([]);
+  const currentBetRef = useRef(0);
+  const splitBetRef = useRef(0);
+  const isSplitRef = useRef(false);
+  const activeSplitRef = useRef(false);
+
   // Persist balance
   useEffect(() => {
     localStorage.setItem('pcom-bj-balance', balance.toString());
@@ -149,6 +167,16 @@ export default function BlackjackGame() {
   useEffect(() => {
     return () => dealTimeouts.current.forEach(clearTimeout);
   }, []);
+
+  // Sync refs
+  useEffect(() => { playerHandRef.current = playerHand; }, [playerHand]);
+  useEffect(() => { splitHandRef.current = splitHand; }, [splitHand]);
+  useEffect(() => { dealerHandRef.current = dealerHand; }, [dealerHand]);
+  useEffect(() => { deckRef.current = deck; }, [deck]);
+  useEffect(() => { currentBetRef.current = currentBet; }, [currentBet]);
+  useEffect(() => { splitBetRef.current = splitBet; }, [splitBet]);
+  useEffect(() => { isSplitRef.current = isSplit; }, [isSplit]);
+  useEffect(() => { activeSplitRef.current = activeSplit; }, [activeSplit]);
 
   const drawCard = useCallback((faceUp = true): [Card, Card[]] => {
     const newDeck = [...deck];
@@ -235,94 +263,166 @@ export default function BlackjackGame() {
     }, delays[3]));
   }, [currentBet, deck]);
 
-  const hit = () => {
-    const [card, newDeck] = drawCard(true);
-    const newHand = [...playerHand, card];
-    setPlayerHand(newHand);
-    setDeck(newDeck);
-    setDealtCards((prev) => prev + 1);
-
-    if (isBust(newHand)) {
-      setResult('bust');
-      setResultMessage('Bust! Over 21.');
-      setPhase('result');
-    }
-  };
-
-  const stand = useCallback(() => {
+  // ─── Dealer Play (reads from refs for timeout safety) ─────────────────────
+  const runDealer = () => {
     setPhase('dealer-turn');
+    const mainHand = playerHandRef.current;
+    const splitHd = splitHandRef.current;
+    const hasSplit = isSplitRef.current;
+    const mainBet = currentBetRef.current;
+    const sBet = splitBetRef.current;
+    const mainBusted = isBust(mainHand);
+    const splitBusted = hasSplit ? isBust(splitHd) : true;
 
-    // Reveal dealer's hole card
-    const revealed = dealerHand.map((c) => ({ ...c, faceUp: true }));
+    const revealed = dealerHandRef.current.map((c) => ({ ...c, faceUp: true }));
     setDealerHand(revealed);
 
-    let currentDealerHand = [...revealed];
-    let currentDeck = [...deck];
-    const dealerDraws: Card[] = [];
-
-    // Dealer draws (hits on soft 17)
-    while (handValue(currentDealerHand) < 17 || isSoft17(currentDealerHand)) {
-      if (currentDeck.length < 5) currentDeck.push(...createDeck());
-      const card = { ...currentDeck.pop()!, faceUp: true };
-      currentDealerHand.push(card);
-      dealerDraws.push(card);
+    if (mainBusted && splitBusted) {
+      setPhase('result');
+      return;
     }
 
-    // Animate dealer draws
-    let delay = 400;
-    dealerDraws.forEach((card, i) => {
+    let curDealer = [...revealed];
+    let curDeck = [...deckRef.current];
+    const draws: Card[] = [];
+
+    while (handValue(curDealer) < 17 || isSoft17(curDealer)) {
+      if (curDeck.length < 5) curDeck.push(...createDeck());
+      const card = { ...curDeck.pop()!, faceUp: true };
+      curDealer.push(card);
+      draws.push(card);
+    }
+
+    draws.forEach((card, i) => {
       dealTimeouts.current.push(setTimeout(() => {
         setDealerHand((prev) => [...prev, card]);
         setDealtCards((prev) => prev + 1);
-      }, delay + i * 500));
+      }, 400 + i * 500));
     });
 
-    // Determine result
-    const totalDelay = delay + dealerDraws.length * 500 + 200;
     dealTimeouts.current.push(setTimeout(() => {
-      setDeck(currentDeck);
-      const playerVal = handValue(playerHand);
-      const dealerVal = handValue(currentDealerHand);
+      setDeck(curDeck);
+      const dVal = handValue(curDealer);
+      const dBust = isBust(curDealer);
 
-      if (isBust(currentDealerHand)) {
-        setResult('win');
-        setResultMessage(`Dealer busts with ${dealerVal}! You win!`);
-        setBalance((prev) => prev + currentBet * 2);
-      } else if (playerVal > dealerVal) {
-        setResult('win');
-        setResultMessage(`${playerVal} beats ${dealerVal}! You win!`);
-        setBalance((prev) => prev + currentBet * 2);
-      } else if (playerVal < dealerVal) {
-        setResult('lose');
-        setResultMessage(`Dealer's ${dealerVal} beats your ${playerVal}.`);
-      } else {
-        setResult('push');
-        setResultMessage('Push! Bet returned.');
-        setBalance((prev) => prev + currentBet);
+      // Evaluate main hand
+      if (!mainBusted) {
+        const pVal = handValue(mainHand);
+        if (dBust) { setResult('win'); setResultMessage(hasSplit ? 'Dealer busts! Hand 1 wins!' : `Dealer busts with ${dVal}! You win!`); setBalance((p) => p + mainBet * 2); }
+        else if (pVal > dVal) { setResult('win'); setResultMessage(hasSplit ? `Hand 1: ${pVal} beats ${dVal}!` : `${pVal} beats ${dVal}! You win!`); setBalance((p) => p + mainBet * 2); }
+        else if (pVal < dVal) { setResult('lose'); setResultMessage(hasSplit ? `Hand 1: Dealer's ${dVal} beats ${pVal}.` : `Dealer's ${dVal} beats your ${pVal}.`); }
+        else { setResult('push'); setResultMessage(hasSplit ? 'Hand 1: Push!' : 'Push! Bet returned.'); setBalance((p) => p + mainBet); }
       }
-      setPhase('result');
-    }, totalDelay));
-  }, [dealerHand, deck, playerHand, currentBet]);
 
-  const doubleDown = () => {
-    if (balance >= currentBet && playerHand.length === 2) {
-      setBalance((prev) => prev - currentBet);
-      setCurrentBet((prev) => prev * 2);
-      const [card, newDeck] = drawCard(true);
+      // Evaluate split hand
+      if (hasSplit && !splitBusted) {
+        const sVal = handValue(splitHd);
+        if (dBust) { setSplitResult('win'); setSplitResultMessage('Dealer busts! Hand 2 wins!'); setBalance((p) => p + sBet * 2); }
+        else if (sVal > dVal) { setSplitResult('win'); setSplitResultMessage(`Hand 2: ${sVal} beats ${dVal}!`); setBalance((p) => p + sBet * 2); }
+        else if (sVal < dVal) { setSplitResult('lose'); setSplitResultMessage(`Hand 2: Dealer's ${dVal} beats ${sVal}.`); }
+        else { setSplitResult('push'); setSplitResultMessage('Hand 2: Push!'); setBalance((p) => p + sBet); }
+      }
+
+      setPhase('result');
+    }, 400 + draws.length * 500 + 200));
+  };
+
+  // ─── Player Actions ─────────────────────────────────────────────────────────
+  const hit = () => {
+    const [card, newDeck] = drawCard(true);
+    setDeck(newDeck);
+    setDealtCards((prev) => prev + 1);
+
+    if (isSplit && activeSplit) {
+      const newHand = [...splitHand, card];
+      setSplitHand(newHand);
+      if (isBust(newHand)) {
+        setSplitResult('bust');
+        setSplitResultMessage('Hand 2 busts!');
+        setTimeout(() => runDealer(), 600);
+      }
+    } else {
       const newHand = [...playerHand, card];
       setPlayerHand(newHand);
+      if (isBust(newHand)) {
+        if (isSplit) {
+          setResult('bust');
+          setResultMessage('Hand 1 busts!');
+          setTimeout(() => setActiveSplit(true), 400);
+        } else {
+          setResult('bust');
+          setResultMessage('Bust! Over 21.');
+          setPhase('result');
+        }
+      }
+    }
+  };
+
+  const stand = () => {
+    if (isSplitRef.current && !activeSplitRef.current) {
+      setActiveSplit(true);
+      return;
+    }
+    runDealer();
+  };
+
+  const doubleDown = () => {
+    const hand = isSplit && activeSplit ? splitHand : playerHand;
+    const bet = isSplit && activeSplit ? splitBet : currentBet;
+
+    if (balance >= bet && hand.length === 2) {
+      setBalance((prev) => prev - bet);
+      if (isSplit && activeSplit) {
+        setSplitBet((prev) => prev * 2);
+      } else {
+        setCurrentBet((prev) => prev * 2);
+      }
+      const [card, newDeck] = drawCard(true);
+      const newHand = [...hand, card];
+      if (isSplit && activeSplit) {
+        setSplitHand(newHand);
+      } else {
+        setPlayerHand(newHand);
+      }
       setDeck(newDeck);
       setDealtCards((prev) => prev + 1);
 
       if (isBust(newHand)) {
-        setResult('bust');
-        setResultMessage('Bust! Over 21.');
-        setPhase('result');
+        if (isSplit && activeSplit) {
+          setSplitResult('bust');
+          setSplitResultMessage('Hand 2 busts!');
+          setTimeout(() => runDealer(), 600);
+        } else if (isSplit) {
+          setResult('bust');
+          setResultMessage('Hand 1 busts!');
+          setTimeout(() => setActiveSplit(true), 600);
+        } else {
+          setResult('bust');
+          setResultMessage('Bust! Over 21.');
+          setPhase('result');
+        }
       } else {
-        // Auto-stand after double
         setTimeout(() => stand(), 600);
       }
     }
+  };
+
+  const handleSplit = () => {
+    const card1 = playerHand[0];
+    const card2 = playerHand[1];
+    const newDeck = [...deck];
+    if (newDeck.length < 5) newDeck.push(...createDeck());
+    const deal1 = { ...newDeck.pop()!, faceUp: true };
+    const deal2 = { ...newDeck.pop()!, faceUp: true };
+
+    setPlayerHand([card1, deal1]);
+    setSplitHand([card2, deal2]);
+    setSplitBet(currentBet);
+    setBalance((prev) => prev - currentBet);
+    setDeck(newDeck);
+    setIsSplit(true);
+    setActiveSplit(false);
+    setDealtCards((prev) => prev + 2);
   };
 
   const newRound = () => {
@@ -333,14 +433,25 @@ export default function BlackjackGame() {
     setResult(null);
     setResultMessage('');
     setDealtCards(0);
+    setSplitHand([]);
+    setSplitBet(0);
+    setSplitResult(null);
+    setSplitResultMessage('');
+    setActiveSplit(false);
+    setIsSplit(false);
     dealTimeouts.current.forEach(clearTimeout);
     dealTimeouts.current = [];
     if (balance <= 0) setBalance(1000);
   };
 
   const playerVal = handValue(playerHand);
+  const splitVal = handValue(splitHand);
   const dealerVal = handValue(dealerHand);
-  const canDouble = phase === 'playing' && playerHand.length === 2 && balance >= currentBet;
+  const activeHand = isSplit && activeSplit ? splitHand : playerHand;
+  const activeBet = isSplit && activeSplit ? splitBet : currentBet;
+  const canDouble = phase === 'playing' && activeHand.length === 2 && balance >= activeBet;
+  const canSplit = phase === 'playing' && playerHand.length === 2 && !isSplit &&
+    balance >= currentBet && cardValue(playerHand[0])[0] === cardValue(playerHand[1])[0];
 
   return (
     <div className="bj-page">
@@ -414,26 +525,36 @@ export default function BlackjackGame() {
 
           {/* Player area */}
           <div className="bj-player-area">
-            <div className="bj-hand bj-player-hand">
-              {playerHand.map((card, i) => (
-                <div
-                  key={`p-${i}`}
-                  className="bj-card-wrapper"
-                  style={{
-                    animationDelay: `${i * 0.15}s`,
-                    marginLeft: i > 0 ? '-40px' : '0',
-                    zIndex: i,
-                  }}
-                >
-                  <CardComponent card={card} />
+            <div className={`bj-hands-row ${isSplit ? 'bj-hands-split' : ''}`}>
+              <div className={`bj-hand-col ${isSplit && !activeSplit && phase === 'playing' ? 'bj-hand-active' : ''} ${isSplit && activeSplit ? 'bj-hand-dim' : ''}`}>
+                {isSplit && <div className="bj-hand-label">Hand 1</div>}
+                <div className="bj-hand bj-player-hand">
+                  {playerHand.map((card, i) => (
+                    <div key={`p-${i}`} className="bj-card-wrapper" style={{ animationDelay: `${i * 0.15}s`, marginLeft: i > 0 ? '-40px' : '0', zIndex: i }}>
+                      <CardComponent card={card} />
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
-            {playerHand.length > 0 && (
-              <div className={`bj-hand-value bj-player-value ${isBust(playerHand) ? 'bj-bust' : ''}`}>
-                {playerVal}
+                {playerHand.length > 0 && (
+                  <div className={`bj-hand-value bj-player-value ${isBust(playerHand) ? 'bj-bust' : ''}`}>{playerVal}</div>
+                )}
               </div>
-            )}
+              {isSplit && (
+                <div className={`bj-hand-col ${activeSplit && phase === 'playing' ? 'bj-hand-active' : ''} ${!activeSplit ? 'bj-hand-dim' : ''}`}>
+                  <div className="bj-hand-label">Hand 2</div>
+                  <div className="bj-hand bj-player-hand">
+                    {splitHand.map((card, i) => (
+                      <div key={`s-${i}`} className="bj-card-wrapper" style={{ animationDelay: `${i * 0.15}s`, marginLeft: i > 0 ? '-40px' : '0', zIndex: i }}>
+                        <CardComponent card={card} />
+                      </div>
+                    ))}
+                  </div>
+                  {splitHand.length > 0 && (
+                    <div className={`bj-hand-value bj-player-value ${isBust(splitHand) ? 'bj-bust' : ''}`}>{splitVal}</div>
+                  )}
+                </div>
+              )}
+            </div>
 
             <div className="bj-player-info">
               <div className="bj-avatar bj-avatar-player">
@@ -449,14 +570,24 @@ export default function BlackjackGame() {
       <div className="bj-controls">
         {/* Result banner */}
         {phase === 'result' && (
-          <div className={`bj-result ${result === 'win' || result === 'blackjack' ? 'bj-result-win' : result === 'push' ? 'bj-result-push' : 'bj-result-lose'}`}>
-            <div className="bj-result-text">{resultMessage}</div>
-            {(result === 'win' || result === 'blackjack') && (
-              <div className="bj-result-amount">
-                +${result === 'blackjack' ? Math.floor(currentBet * 1.5) : currentBet}
+          <>
+            <div className={`bj-result ${result === 'win' || result === 'blackjack' ? 'bj-result-win' : result === 'push' ? 'bj-result-push' : 'bj-result-lose'}`}>
+              <div className="bj-result-text">{resultMessage}</div>
+              {(result === 'win' || result === 'blackjack') && (
+                <div className="bj-result-amount">
+                  +${result === 'blackjack' ? Math.floor(currentBet * 1.5) : currentBet}
+                </div>
+              )}
+            </div>
+            {isSplit && splitResultMessage && (
+              <div className={`bj-result ${splitResult === 'win' ? 'bj-result-win' : splitResult === 'push' ? 'bj-result-push' : 'bj-result-lose'}`}>
+                <div className="bj-result-text">{splitResultMessage}</div>
+                {splitResult === 'win' && (
+                  <div className="bj-result-amount">+${splitBet}</div>
+                )}
               </div>
             )}
-          </div>
+          </>
         )}
 
         {/* Balance */}
@@ -512,6 +643,11 @@ export default function BlackjackGame() {
             {canDouble && (
               <button onClick={doubleDown} className="bj-btn bj-btn-action bj-btn-double">
                 Double
+              </button>
+            )}
+            {canSplit && (
+              <button onClick={handleSplit} className="bj-btn bj-btn-action bj-btn-split">
+                Split
               </button>
             )}
           </div>
@@ -1024,6 +1160,20 @@ export default function BlackjackGame() {
           color: white;
           box-shadow: 0 4px 16px rgba(14, 165, 233, 0.3);
         }
+
+        .bj-btn-split {
+          background: linear-gradient(135deg, #a855f7, #7c3aed);
+          color: white;
+          box-shadow: 0 4px 16px rgba(168, 85, 247, 0.3);
+        }
+
+        /* ─── Split Hands ─────────────────────────────── */
+        .bj-hands-row { display: flex; justify-content: center; }
+        .bj-hands-split { gap: 24px; }
+        .bj-hand-col { display: flex; flex-direction: column; align-items: center; gap: 4px; transition: opacity 0.3s; }
+        .bj-hand-dim { opacity: 0.4; }
+        .bj-hand-active { box-shadow: 0 0 0 2px rgba(201,169,78,0.4); border-radius: 12px; padding: 4px 8px; background: rgba(201,169,78,0.05); }
+        .bj-hand-label { font-size: 10px; font-weight: 700; color: rgba(201,169,78,0.6); text-transform: uppercase; letter-spacing: 1px; }
 
         .bj-btn-large {
           padding: 16px 48px;

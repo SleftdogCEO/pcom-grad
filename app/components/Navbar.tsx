@@ -40,7 +40,10 @@ export default function Navbar() {
             Poker
           </a>
           <a href="/blackjack" className="text-gold/80 hover:text-gold transition-colors font-semibold hidden sm:block">
-            Blackjack
+            21
+          </a>
+          <a href="/poker/bets" className="text-gold/80 hover:text-gold transition-colors font-semibold hidden sm:block">
+            Bets
           </a>
           {name ? (
             <button

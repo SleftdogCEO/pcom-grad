@@ -17,6 +17,26 @@ export interface Player {
   sittingOut: boolean;
   seat: number;
   lastAction?: string;
+  preHandChips?: number; // saved at deal, restored in practice mode
+  autoFoldCount?: number; // consecutive auto-folds from shot clock
+  vibes?: string[]; // active emoji accessories (🥃, 🚬)
+}
+
+export interface PlayerStats {
+  name: string;
+  totalChips: number;     // lifetime chips (buy-in tracked)
+  handsWon: number;
+  biggestPot: number;
+  lastDaily: string;      // ISO date of last daily bonus claim
+  joinedAt: string;       // ISO date
+}
+
+export interface ChatMessage {
+  id: string;
+  name: string;
+  text: string;
+  emoji?: string;      // quick reaction
+  timestamp: number;
 }
 
 export interface GameState {
@@ -35,6 +55,9 @@ export interface GameState {
   roundStarted: boolean;
   winners?: { name: string; amount: number; hand: string }[];
   handNumber: number;
+  leaderboard: PlayerStats[];
+  chat: ChatMessage[];
+  turnDeadline?: number; // timestamp when current turn auto-folds
 }
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -85,12 +108,18 @@ export function createInitialState(): GameState {
     minRaise: 20,
     roundStarted: false,
     handNumber: 0,
+    leaderboard: [],
+    chat: [],
   };
 }
 
 // ─── Player management ──────────────────────────────────────────────────────
 
-export function addPlayer(state: GameState, name: string, buyIn: number): GameState {
+const STARTING_CHIPS = 1000;
+const DAILY_BONUS = 100;
+
+export function addPlayer(state: GameState, name: string, _buyIn?: number): GameState {
+  // Already at the table
   if (state.players.find((p) => p.name === name)) return state;
   if (state.players.length >= 8) return state;
 
@@ -98,9 +127,13 @@ export function addPlayer(state: GameState, name: string, buyIn: number): GameSt
   let seat = 0;
   while (takenSeats.has(seat)) seat++;
 
+  // Check if returning player (already on leaderboard)
+  const existing = state.leaderboard.find((s) => s.name === name);
+  const chips = existing ? existing.totalChips : STARTING_CHIPS;
+
   const player: Player = {
     name,
-    chips: buyIn,
+    chips: Math.max(chips, 0),
     hand: [],
     bet: 0,
     totalBet: 0,
@@ -110,20 +143,49 @@ export function addPlayer(state: GameState, name: string, buyIn: number): GameSt
     seat,
   };
 
-  return { ...state, players: [...state.players, player] };
+  // Update or create leaderboard entry
+  const now = new Date().toISOString();
+  let leaderboard = [...state.leaderboard];
+  if (existing) {
+    leaderboard = leaderboard.map((s) => s.name === name ? { ...s, totalChips: chips } : s);
+  } else {
+    leaderboard.push({
+      name,
+      totalChips: STARTING_CHIPS,
+      handsWon: 0,
+      biggestPot: 0,
+      lastDaily: '',
+      joinedAt: now,
+    });
+  }
+
+  return { ...state, players: [...state.players, player], leaderboard };
+}
+
+export function claimDailyBonus(state: GameState, name: string): GameState {
+  const today = new Date().toISOString().slice(0, 10);
+  const stats = state.leaderboard.find((s) => s.name === name);
+  if (!stats) return state;
+  if (stats.lastDaily === today) return state; // already claimed
+
+  const newLeaderboard = state.leaderboard.map((s) =>
+    s.name === name ? { ...s, totalChips: s.totalChips + DAILY_BONUS, lastDaily: today } : s
+  );
+
+  const newPlayers = state.players.map((p) =>
+    p.name === name ? { ...p, chips: p.chips + DAILY_BONUS } : p
+  );
+
+  return { ...state, players: newPlayers, leaderboard: newLeaderboard };
 }
 
 export function removePlayer(state: GameState, name: string): GameState {
   return { ...state, players: state.players.filter((p) => p.name !== name) };
 }
 
-export function rebuy(state: GameState, name: string, amount: number): GameState {
-  return {
-    ...state,
-    players: state.players.map((p) =>
-      p.name === name ? { ...p, chips: p.chips + amount, sittingOut: false } : p
-    ),
-  };
+export function rebuy(state: GameState, name: string): GameState {
+  // Rebuy not allowed — use daily bonus instead
+  return state;
 }
 
 // ─── Deal a new hand ─────────────────────────────────────────────────────────
@@ -141,6 +203,7 @@ export function dealNewHand(state: GameState): GameState {
     folded: p.chips <= 0 || p.sittingOut,
     allIn: false,
     lastAction: undefined,
+    preHandChips: p.chips, // snapshot for practice mode
   }));
 
   // Move dealer
@@ -230,19 +293,35 @@ function allBetsSettled(state: GameState): boolean {
   return inHand.every((p) => p.bet === maxBet && p.lastAction !== undefined);
 }
 
+// If a bot won, refund all humans who lost. Humans never lose chips to bots.
+// If only humans won, normal play — chip losses are real.
+function refundBotWins(players: Player[], winnerNames: Set<string>): Player[] {
+  const botWon = [...winnerNames].some((name) => isBot(name));
+  if (!botWon) return players; // human won — normal play
+  // A bot won: refund all losing humans
+  return players.map((p) => {
+    if (isBot(p.name)) return p;
+    if (winnerNames.has(p.name)) return p; // human tied with bot, keep chips
+    return { ...p, chips: p.chips + p.totalBet }; // refund
+  });
+}
+
 function advancePhase(state: GameState): GameState {
   const remaining = playersStillInHand(state);
 
   // Only one player left — they win
   if (remaining.length === 1) {
     const winner = remaining[0];
+    let newPlayers = state.players.map((p) =>
+      p.name === winner.name ? { ...p, chips: p.chips + state.pot } : p
+    );
+    // Refund humans if a bot won
+    newPlayers = refundBotWins(newPlayers, new Set([winner.name]));
     return {
       ...state,
       phase: 'showdown',
       winners: [{ name: winner.name, amount: state.pot, hand: 'Last one standing' }],
-      players: state.players.map((p) =>
-        p.name === winner.name ? { ...p, chips: p.chips + state.pot } : p
-      ),
+      players: newPlayers,
       pot: 0,
       currentTurn: -1,
     };
@@ -468,9 +547,26 @@ function resolveShowdown(state: GameState): GameState {
     hand: handRankName(w.rank),
   }));
 
-  const newPlayers = state.players.map((p) => {
+  // Award pot to winners
+  let newPlayers = state.players.map((p) => {
     const win = winnerInfo.find((w) => w.name === p.name);
     return win ? { ...p, chips: p.chips + win.amount } : p;
+  });
+  // Refund humans if a bot won
+  const winNames = new Set(winnerInfo.map((w) => w.name));
+  newPlayers = refundBotWins(newPlayers, winNames);
+  const botWon = [...winNames].some((n) => isBot(n));
+
+  // Update leaderboard stats (bot wins don't count)
+  const newLeaderboard = state.leaderboard.map((s) => {
+    const playerAtTable = newPlayers.find((p) => p.name === s.name);
+    const isWinner = winnerInfo.find((w) => w.name === s.name);
+    return {
+      ...s,
+      totalChips: playerAtTable ? playerAtTable.chips : s.totalChips,
+      handsWon: isWinner && !botWon ? s.handsWon + 1 : s.handsWon,
+      biggestPot: isWinner && !botWon && isWinner.amount > s.biggestPot ? isWinner.amount : s.biggestPot,
+    };
   });
 
   return {
@@ -480,6 +576,7 @@ function resolveShowdown(state: GameState): GameState {
     pot: 0,
     currentTurn: -1,
     winners: winnerInfo,
+    leaderboard: newLeaderboard,
   };
 }
 
@@ -611,3 +708,172 @@ export const RANK_DISPLAY: Record<string, string> = {
   '2': '2', '3': '3', '4': '4', '5': '5',
   '6': '6', '7': '7', '8': '8', '9': '9',
 };
+
+// ─── Chat ─────────────────────────────────────────────────────────────────────
+
+const MAX_CHAT = 50; // keep last 50 messages
+
+export function sendChat(state: GameState, name: string, text: string): GameState {
+  const chat = [...(state.chat || [])];
+  chat.push({
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    name,
+    text: text.slice(0, 200),
+    timestamp: Date.now(),
+  });
+  if (chat.length > MAX_CHAT) chat.splice(0, chat.length - MAX_CHAT);
+  return { ...state, chat };
+}
+
+export function sendReaction(state: GameState, name: string, emoji: string): GameState {
+  const chat = [...(state.chat || [])];
+  chat.push({
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    name,
+    text: '',
+    emoji,
+    timestamp: Date.now(),
+  });
+  if (chat.length > MAX_CHAT) chat.splice(0, chat.length - MAX_CHAT);
+  return { ...state, chat };
+}
+
+export function toggleVibe(state: GameState, name: string, vibe: string): GameState {
+  return {
+    ...state,
+    players: state.players.map((p) => {
+      if (p.name !== name) return p;
+      const current = p.vibes || [];
+      const has = current.includes(vibe);
+      return { ...p, vibes: has ? current.filter((v) => v !== vibe) : [...current, vibe] };
+    }),
+  };
+}
+
+// ─── Shot Clock ───────────────────────────────────────────────────────────────
+
+export const TURN_TIME = 20_000; // 20 seconds per turn
+
+// ─── AI Dealer Bots ──────────────────────────────────────────────────────────
+
+export const BOT_NAMES = ['Dr. House', 'Dr. Grey', 'Dr. Cox'];
+
+export function isBot(name: string): boolean {
+  return BOT_NAMES.includes(name);
+}
+
+export function getBotAction(state: GameState, botName: string): GameState {
+  const idx = state.players.findIndex((p) => p.name === botName);
+  if (idx < 0 || state.currentTurn !== idx) return state;
+  const bot = state.players[idx];
+  if (bot.folded || bot.allIn) return state;
+
+  const maxBet = Math.max(0, ...state.players.filter((p) => !p.folded).map((p) => p.bet));
+  const toCall = maxBet - bot.bet;
+  const rand = Math.random();
+
+  // Simple bot strategy
+  if (toCall === 0) {
+    // Can check or raise
+    if (rand < 0.75) return check(state, botName);
+    const raiseAmt = maxBet + state.minRaise + Math.floor(Math.random() * state.bigBlind * 2);
+    return raise(state, botName, Math.min(raiseAmt, bot.chips + bot.bet));
+  } else if (toCall <= bot.chips * 0.3) {
+    // Small call
+    if (rand < 0.7) return call(state, botName);
+    if (rand < 0.85) return fold(state, botName);
+    return raise(state, botName, Math.min(maxBet + state.minRaise, bot.chips + bot.bet));
+  } else {
+    // Big bet to call
+    if (rand < 0.4) return call(state, botName);
+    return fold(state, botName);
+  }
+}
+
+// ─── Theme Nights ─────────────────────────────────────────────────────────────
+
+export interface Theme {
+  name: string;
+  subtitle: string;
+  emoji: string;
+  feltGradient: string;
+  pageTint: string;
+  cardBack: string;
+  brandText: string;
+}
+
+export const THEMES: Record<string, Theme> = {
+  anatomy_lab: {
+    name: 'Anatomy Lab',
+    subtitle: 'Cadaver table energy',
+    emoji: '🦴',
+    feltGradient: 'linear-gradient(180deg, #2a2a3a 0%, #1a1a28 30%, #151520 60%, #0f0f18 100%)',
+    pageTint: 'rgba(100,100,140,0.12)',
+    cardBack: '#374151',
+    brandText: 'DONOR APPRECIATION',
+  },
+  flavortown: {
+    name: 'Flavortown',
+    subtitle: 'Guy Fieri sends his regards',
+    emoji: '🔥',
+    feltGradient: 'linear-gradient(180deg, #8B1A1A 0%, #6b1515 30%, #4a0e0e 60%, #350a0a 100%)',
+    pageTint: 'rgba(239,68,68,0.12)',
+    cardBack: '#dc2626',
+    brandText: 'WELCOME TO FLAVORTOWN',
+  },
+  shrek_swamp: {
+    name: "Shrek's Swamp",
+    subtitle: 'Get outta my swamp',
+    emoji: '🧅',
+    feltGradient: 'linear-gradient(180deg, #3a5a1a 0%, #2d4a14 30%, #1f3a0d 60%, #152a08 100%)',
+    pageTint: 'rgba(74,222,30,0.08)',
+    cardBack: '#3f6212',
+    brandText: "IT'S ALL OGRE NOW",
+  },
+  bro_science: {
+    name: 'Bro Science',
+    subtitle: 'Do you even fold bro',
+    emoji: '💪',
+    feltGradient: 'linear-gradient(180deg, #1a1a2e 0%, #16162a 30%, #0f0f22 60%, #0a0a1a 100%)',
+    pageTint: 'rgba(59,130,246,0.1)',
+    cardBack: '#1e40af',
+    brandText: 'SUPRAPHYSIOLOGICAL BETS',
+  },
+  board_exam: {
+    name: 'Board Exam PTSD',
+    subtitle: 'This hand is pass/fail',
+    emoji: '📚',
+    feltGradient: 'linear-gradient(180deg, #2a1a0a 0%, #221508 30%, #1a1005 60%, #120c03 100%)',
+    pageTint: 'rgba(201,169,78,0.1)',
+    cardBack: '#78350f',
+    brandText: 'FIRST AID CH. 1-12',
+  },
+  jurassic: {
+    name: 'Jurassic Poker',
+    subtitle: 'Life finds a way to fold',
+    emoji: '🦕',
+    feltGradient: 'linear-gradient(180deg, #0f4a2a 0%, #0b3820 30%, #082a18 60%, #051f10 100%)',
+    pageTint: 'rgba(34,197,94,0.08)',
+    cardBack: '#166534',
+    brandText: 'CLEVER GIRL',
+  },
+  match_day: {
+    name: 'Match Day',
+    subtitle: "Where you goin'?",
+    emoji: '🏥',
+    feltGradient: 'linear-gradient(180deg, #0f6b35 0%, #0b5529 30%, #084420 60%, #063518 100%)',
+    pageTint: 'rgba(139,26,43,0.15)',
+    cardBack: '#8B1A2B',
+    brandText: 'I MATCHED!!!',
+  },
+};
+
+// Rotate themes by day of week
+// Sun=0, Mon=1, Tue=2, Wed=3, Thu=4, Fri=5, Sat=6
+const THEME_SCHEDULE = ['anatomy_lab', 'flavortown', 'shrek_swamp', 'bro_science', 'board_exam', 'jurassic', 'match_day'];
+
+export function getTodaysTheme(): Theme {
+  const day = new Date().getDay(); // 0=Sun
+  const key = THEME_SCHEDULE[day] || 'casino_royale';
+  return THEMES[key];
+}
