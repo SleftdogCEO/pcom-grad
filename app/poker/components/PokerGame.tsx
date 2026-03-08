@@ -15,9 +15,11 @@ import { getAvatar, findProfile, KNOWN_PLAYERS } from '../lib/avatars';
 import AmbientCanvas from './AmbientCanvas';
 
 const ROOM_ID = 'pcom-main';
+const CHAT_ID = 'pcom-chat';
 const DEFAULT_BUY_IN = 1000;
 const BOT_DELAY = 2000; // bots act after 2s
 const AUTO_DEAL_DELAY = 5000;
+const MAX_CHAT = 200;
 const CODE_VERSION = 7; // bump to force client reload
 const theme = getTodaysTheme();
 
@@ -54,6 +56,8 @@ export default function PokerGame() {
   });
   const [showCustom, setShowCustom] = useState(false);
   const [editName, setEditName] = useState('');
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const chatRef = useRef<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState('');
   const [chatOpen, setChatOpen] = useState(true);
   const [chatTab, setChatTab] = useState<'chat' | 'leaderboard'>('chat');
@@ -123,6 +127,33 @@ export default function PokerGame() {
         setGameState(gs); stateRef.current = gs;
       }).subscribe();
     return () => { clearTimeout(timeout); supabase!.removeChannel(channel); };
+  }, []);
+
+  // Load and sync persistent chat (separate from game state)
+  useEffect(() => {
+    if (!supabase) return;
+    async function loadChat() {
+      const { data } = await supabase!.from('poker_rooms').select('game_state').eq('id', CHAT_ID).single();
+      if (data) {
+        const msgs = (data.game_state as { messages: ChatMessage[] })?.messages || [];
+        setChatMessages(msgs); chatRef.current = msgs;
+      } else {
+        await supabase!.from('poker_rooms').insert({ id: CHAT_ID, game_state: { messages: [] } });
+      }
+    }
+    loadChat();
+    const channel = supabase.channel('poker-chat')
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'poker_rooms', filter: `id=eq.${CHAT_ID}` }, (payload) => {
+        const msgs = ((payload.new as { game_state: { messages: ChatMessage[] } }).game_state)?.messages || [];
+        setChatMessages(msgs); chatRef.current = msgs;
+      }).subscribe();
+    return () => { supabase!.removeChannel(channel); };
+  }, []);
+
+  const updateChat = useCallback(async (msgs: ChatMessage[]) => {
+    setChatMessages(msgs); chatRef.current = msgs;
+    if (!supabase) return;
+    await supabase.from('poker_rooms').update({ game_state: { messages: msgs }, updated_at: new Date().toISOString() }).eq('id', CHAT_ID);
   }, []);
 
   const updateState = useCallback(async (newState: GameState) => {
@@ -250,27 +281,29 @@ export default function PokerGame() {
   // Auto-scroll chat
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [gameState?.chat?.length]);
+  }, [chatMessages.length]);
 
   const withDeadline = (s: GameState) => s.currentTurn >= 0 ? { ...s, turnDeadline: Date.now() + TURN_TIME } : s;
 
   const handleSendChat = async () => {
-    const current = stateRef.current;
-    if (!myName || !current || !chatInput.trim()) return;
+    if (!myName || !chatInput.trim()) return;
     const msg = chatInput.trim();
     setChatInput('');
-    await updateState(sendChat(current, myName, msg));
+    const msgs = [...chatRef.current, { id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, name: myName, text: msg, timestamp: Date.now() }];
+    if (msgs.length > MAX_CHAT) msgs.splice(0, msgs.length - MAX_CHAT);
+    await updateChat(msgs);
   };
 
   const handleReaction = async (emoji: string) => {
-    const current = stateRef.current;
-    if (!myName || !current) return;
+    if (!myName) return;
     // Floating emoji animation
     const id = `${Date.now()}-${Math.random()}`;
     const x = 20 + Math.random() * 60;
     setFloatingEmojis((prev) => [...prev, { id, emoji, x }]);
     setTimeout(() => setFloatingEmojis((prev) => prev.filter((e) => e.id !== id)), 2000);
-    await updateState(sendReaction(current, myName, emoji));
+    const msgs = [...chatRef.current, { id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, name: myName, text: '', emoji, timestamp: Date.now() }];
+    if (msgs.length > MAX_CHAT) msgs.splice(0, msgs.length - MAX_CHAT);
+    await updateChat(msgs);
   };
 
   const handleJoin = async () => {
@@ -747,7 +780,7 @@ export default function PokerGame() {
               {chatTab === 'chat' ? (
                 <>
                   <div className="pk-chat-messages">
-                    {(gameState.chat || []).map((msg) => (
+                    {chatMessages.map((msg) => (
                       <div key={msg.id} className={`pk-chat-msg ${msg.emoji ? 'pk-chat-reaction' : ''}`}>
                         {msg.emoji ? (
                           <><span className="pk-chat-name">{msg.name}</span><span className="pk-chat-emoji-big">{msg.emoji}</span></>
